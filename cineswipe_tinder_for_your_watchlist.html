@@ -1,0 +1,1098 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>CineSwipe - Your Personal Movie & Show Matcher</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Canvas Confetti -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Google Fonts: Inter & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            display: ['Outfit', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              rose: '#FF4458',
+              coral: '#FF6B6B',
+              orange: '#FF884B',
+              gold: '#FBBF24',
+              teal: '#14B8A6',
+              dark: '#0F1115',
+              card: '#181B22',
+              cardBorder: '#272B35'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Card swipe & stack animations */
+    .card-stack {
+      position: relative;
+      perspective: 1000px;
+    }
+
+    .tinder-card {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      user-select: none;
+      touch-action: none;
+      transform-origin: 50% 100%;
+      will-change: transform;
+      transition: transform 0.15s ease-out, opacity 0.2s ease-out;
+    }
+
+    .tinder-card.animating-exit {
+      transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease-out;
+    }
+
+    .tinder-card.animating-return {
+      transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    /* Gradient overlay styles */
+    .card-overlay {
+      background: linear-gradient(180deg, rgba(15, 17, 21, 0.1) 0%, rgba(15, 17, 21, 0.6) 50%, rgba(15, 17, 21, 0.95) 100%);
+    }
+
+    /* Swipe indicators */
+    .stamp-badge {
+      opacity: 0;
+      transition: opacity 0.15s ease-out;
+      pointer-events: none;
+    }
+
+    /* Custom scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #12141a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #2b303c;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #3f4657;
+    }
+
+    /* Hide scrollbar for category pills */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+</head>
+<body class="bg-brand-dark text-slate-100 min-h-screen flex flex-col font-sans select-none overflow-x-hidden">
+
+  <!-- TOP APP BAR -->
+  <header class="w-full max-w-lg mx-auto px-4 py-3 flex items-center justify-between border-b border-white/10 z-30">
+    <div class="flex items-center space-x-2.5">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-rose via-brand-coral to-brand-orange flex items-center justify-center shadow-lg shadow-brand-rose/25">
+        <i class="fa-solid fa-fire-flame-curved text-white text-lg"></i>
+      </div>
+      <div>
+        <h1 class="text-xl font-display font-extrabold tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">
+          CineSwipe
+        </h1>
+      </div>
+    </div>
+
+    <div class="flex items-center space-x-2">
+      <!-- Pick Roulette Button -->
+      <button id="btn-roulette" title="Pick Random Film for Me" class="w-9 h-9 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 text-brand-gold flex items-center justify-center transition active:scale-95">
+        <i class="fa-solid fa-dice text-base"></i>
+      </button>
+
+      <!-- Matches / Watchlist Drawer Button -->
+      <button id="btn-open-watchlist" class="relative px-3 py-1.5 rounded-full bg-gradient-to-r from-brand-rose/20 to-brand-orange/20 border border-brand-rose/40 text-rose-300 font-semibold text-xs flex items-center gap-1.5 hover:brightness-110 active:scale-95 transition">
+        <i class="fa-solid fa-bookmark text-brand-rose"></i>
+        <span>Watchlist</span>
+        <span id="watchlist-count" class="ml-0.5 px-1.5 py-0.2 bg-brand-rose text-white text-[11px] rounded-full font-bold">0</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- FILTER CHIPS BAR -->
+  <div class="w-full max-w-lg mx-auto px-4 py-2.5 z-20">
+    <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1 text-xs">
+      <button class="filter-chip active px-3.5 py-1.5 rounded-full bg-white text-black font-semibold tracking-wide whitespace-nowrap shadow transition" data-filter="all">All (<span id="total-pool-count">0</span>)</button>
+      <button class="filter-chip px-3.5 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 whitespace-nowrap transition" data-filter="Movie">Movies</button>
+      <button class="filter-chip px-3.5 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 whitespace-nowrap transition" data-filter="Series">TV Series</button>
+      <button class="filter-chip px-3.5 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 whitespace-nowrap transition" data-filter="Thriller">Thriller / Mystery</button>
+      <button class="filter-chip px-3.5 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 whitespace-nowrap transition" data-filter="Comedy">Comedy</button>
+      <button class="filter-chip px-3.5 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 whitespace-nowrap transition" data-filter="Sci-Fi">Sci-Fi</button>
+      <button class="filter-chip px-3.5 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 whitespace-nowrap transition" data-filter="Drama">Drama</button>
+      <button class="filter-chip px-3.5 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 whitespace-nowrap transition" data-filter="Classic">Cult & Classics</button>
+    </div>
+  </div>
+
+  <!-- MAIN CARD SWIPE ARENA -->
+  <main class="flex-1 w-full max-w-md mx-auto px-4 flex flex-col justify-center items-center relative py-1">
+    
+    <!-- TINDER CARDS CONTAINER -->
+    <div id="card-deck" class="card-stack w-full h-[500px] sm:h-[530px] max-h-[72vh] relative">
+      <!-- Dynamic Cards will be rendered here -->
+    </div>
+
+    <!-- EMPTY STATE (Shown when all cards are swiped) -->
+    <div id="deck-empty" class="hidden flex-col items-center justify-center text-center p-8 bg-brand-card/70 border border-white/10 rounded-3xl w-full h-[500px] sm:h-[530px] max-h-[72vh] shadow-2xl backdrop-blur-md">
+      <div class="w-20 h-20 rounded-full bg-gradient-to-tr from-brand-rose to-brand-orange flex items-center justify-center mb-5 text-3xl shadow-lg">
+        🎬
+      </div>
+      <h3 class="text-2xl font-bold font-display text-white mb-2">You cleared the deck!</h3>
+      <p class="text-slate-400 text-sm max-w-xs mb-6">
+        You've reviewed every title in this filter. Check your matches to pick what to stream tonight, or reset to swipe again.
+      </p>
+      <div class="flex gap-3">
+        <button id="btn-reset-deck" class="px-5 py-2.5 rounded-full bg-white text-black font-semibold text-sm shadow hover:bg-slate-200 transition active:scale-95 flex items-center gap-2">
+          <i class="fa-solid fa-rotate-left"></i> Reset Stack
+        </button>
+        <button id="btn-view-matches-empty" class="px-5 py-2.5 rounded-full bg-brand-rose text-white font-semibold text-sm shadow-lg shadow-brand-rose/30 hover:bg-rose-600 transition active:scale-95 flex items-center gap-2">
+          <i class="fa-solid fa-heart"></i> View Matches
+        </button>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ACTION BUTTON CONTROLS -->
+  <footer class="w-full max-w-sm mx-auto px-6 py-4 flex items-center justify-between z-20">
+    <!-- REWIND BUTTON -->
+    <button id="action-rewind" title="Rewind / Undo" class="w-12 h-12 rounded-full bg-white/5 border border-white/15 text-amber-400 flex items-center justify-center hover:bg-white/10 active:scale-90 transition shadow-md disabled:opacity-30 disabled:pointer-events-none">
+      <i class="fa-solid fa-rotate-left text-base"></i>
+    </button>
+
+    <!-- DISLIKE (NOPE / PASS) -->
+    <button id="action-dislike" title="Pass / Skip (Left Arrow)" class="w-16 h-16 rounded-full bg-brand-card border-2 border-rose-500/30 text-rose-500 hover:border-rose-500 hover:bg-rose-500/10 flex items-center justify-center active:scale-90 transition shadow-xl group">
+      <i class="fa-solid fa-xmark text-2xl group-hover:scale-110 transition-transform"></i>
+    </button>
+
+    <!-- SUPER LIKE (STAR) -->
+    <button id="action-superlike" title="Super Like / Priority Watch (Up Arrow)" class="w-12 h-12 rounded-full bg-brand-card border-2 border-cyan-400/30 text-cyan-400 hover:border-cyan-400 hover:bg-cyan-400/10 flex items-center justify-center active:scale-90 transition shadow-lg group">
+      <i class="fa-solid fa-star text-lg group-hover:scale-110 transition-transform"></i>
+    </button>
+
+    <!-- LIKE (WATCH THIS) -->
+    <button id="action-like" title="Watch Tonight / Match (Right Arrow)" class="w-16 h-16 rounded-full bg-gradient-to-tr from-brand-rose to-brand-coral border-2 border-rose-400/50 text-white flex items-center justify-center active:scale-90 transition shadow-xl shadow-brand-rose/30 group">
+      <i class="fa-solid fa-heart text-2xl group-hover:scale-110 transition-transform"></i>
+    </button>
+
+    <!-- INSTANT RANDOM PICK -->
+    <button id="action-roulette" title="Surprise Me (Roulette)" class="w-12 h-12 rounded-full bg-white/5 border border-white/15 text-purple-400 flex items-center justify-center hover:bg-white/10 active:scale-90 transition shadow-md">
+      <i class="fa-solid fa-bolt text-lg"></i>
+    </button>
+  </footer>
+
+  <!-- KEYBOARD SHORTCUT HELPER -->
+  <div class="text-center text-[11px] text-slate-500 pb-2 hidden sm:block">
+    Keyboard: <span class="bg-white/10 px-1.5 py-0.5 rounded text-slate-300">←</span> Pass &nbsp;•&nbsp; <span class="bg-white/10 px-1.5 py-0.5 rounded text-slate-300">→</span> Watch &nbsp;•&nbsp; <span class="bg-white/10 px-1.5 py-0.5 rounded text-slate-300">↑</span> Super Like &nbsp;•&nbsp; <span class="bg-white/10 px-1.5 py-0.5 rounded text-slate-300">Z</span> Undo
+  </div>
+
+  <!-- WATCHLIST DRAWER MODAL -->
+  <div id="watchlist-modal" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex justify-end transition-opacity opacity-0 pointer-events-none duration-300">
+    <div id="watchlist-drawer" class="w-full max-w-md bg-brand-card h-full flex flex-col transform translate-x-full transition-transform duration-300 ease-out border-l border-white/10 shadow-2xl">
+      
+      <!-- Drawer Header -->
+      <div class="p-4 border-b border-white/10 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-lg bg-brand-rose/20 text-brand-rose flex items-center justify-center font-bold">
+            <i class="fa-solid fa-heart"></i>
+          </div>
+          <div>
+            <h2 class="text-lg font-bold font-display leading-tight">Your Matches</h2>
+            <p class="text-xs text-slate-400"><span id="saved-counter">0</span> saved to stream</p>
+          </div>
+        </div>
+        <button id="btn-close-watchlist" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-slate-300">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <!-- Action Utilities inside Drawer -->
+      <div class="px-4 py-2.5 bg-black/30 border-b border-white/5 flex items-center justify-between gap-2 text-xs">
+        <button id="btn-copy-matches" class="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 flex items-center gap-1.5 transition">
+          <i class="fa-regular fa-copy"></i>
+          <span>Copy Watchlist</span>
+        </button>
+        <button id="btn-clear-matches" class="px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 flex items-center gap-1.5 transition">
+          <i class="fa-regular fa-trash-can"></i>
+          <span>Clear All</span>
+        </button>
+      </div>
+
+      <!-- Drawer List Items -->
+      <div id="watchlist-items" class="flex-1 overflow-y-auto p-4 space-y-3">
+        <!-- Injected via JavaScript -->
+      </div>
+
+      <!-- Random Pick From Matches Footer -->
+      <div class="p-4 border-t border-white/10 bg-brand-dark/50">
+        <button id="btn-pick-from-matches" class="w-full py-3 rounded-xl bg-gradient-to-r from-brand-rose to-brand-coral text-white font-bold text-sm tracking-wide shadow-lg shadow-brand-rose/20 hover:brightness-110 active:scale-98 transition flex items-center justify-center gap-2">
+          <i class="fa-solid fa-champagne-glasses"></i>
+          Pick 1 Movie For Me Tonight
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SURPRISE MATCH POPUP MODAL -->
+  <div id="match-dialog" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 transition-all opacity-0 pointer-events-none duration-300">
+    <div id="match-dialog-box" class="bg-brand-card border border-brand-rose/40 rounded-3xl max-w-sm w-full p-6 text-center shadow-2xl transform scale-90 transition-all duration-300 relative overflow-hidden">
+      <!-- Glow background -->
+      <div class="absolute -top-24 -left-24 w-48 h-48 bg-brand-rose/30 rounded-full blur-3xl pointer-events-none"></div>
+      <div class="absolute -bottom-24 -right-24 w-48 h-48 bg-brand-coral/30 rounded-full blur-3xl pointer-events-none"></div>
+
+      <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-tr from-brand-rose to-brand-gold flex items-center justify-center text-3xl shadow-lg shadow-brand-rose/30">
+        🍿
+      </div>
+
+      <span class="inline-block px-3 py-1 bg-brand-rose/20 text-brand-rose text-xs font-black tracking-widest uppercase rounded-full mb-2">
+        Tonight's Pick!
+      </span>
+
+      <h3 id="picked-title" class="text-2xl font-black font-display text-white mb-1 leading-snug">Movie Title</h3>
+      <p id="picked-meta" class="text-xs text-slate-400 mb-3">2022 • Thriller • 1h 48m</p>
+      
+      <p id="picked-synopsis" class="text-sm text-slate-300 mb-6 bg-black/30 p-3 rounded-xl border border-white/5 line-clamp-3">
+        Synopsis text will show here.
+      </p>
+
+      <div class="flex flex-col gap-2">
+        <a id="picked-imdb" href="#" target="_blank" class="w-full py-2.5 rounded-xl bg-amber-400 text-black font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 hover:bg-amber-300 transition">
+          <i class="fa-brands fa-imdb text-base"></i> Search on IMDb / Trailer
+        </a>
+        <a id="picked-google" href="#" target="_blank" class="w-full py-2.5 rounded-xl bg-white/10 text-white font-semibold text-xs flex items-center justify-center gap-2 hover:bg-white/20 transition">
+          <i class="fa-brands fa-google text-xs"></i> Where to Stream?
+        </a>
+        <button id="picked-close" class="mt-2 text-xs text-slate-400 hover:text-white py-1 transition">
+          Close & Keep Swiping
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION -->
+  <div id="toast" class="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-slate-900/90 text-white border border-white/20 px-4 py-2 rounded-full text-xs font-semibold shadow-2xl backdrop-blur-md opacity-0 pointer-events-none transition-all duration-200">
+    Notification
+  </div>
+
+  <!-- JAVASCRIPT LOGIC -->
+  <script>
+    // --- USER WATCHLIST DATABASE (Parsed, Cleaned & Enriched) ---
+    const RAW_WATCHLIST = [
+      { title: "The Breakfast Club", year: 1985, type: "Movie", genre: ["Drama", "Comedy", "Classic"], desc: "Five high school students meet in Saturday detention and discover how much they truly have in common." },
+      { title: "Bridge of Spies", year: 2015, type: "Movie", genre: ["Drama", "Thriller", "History"], desc: "During the Cold War, an American lawyer is recruited to defend an arrested Soviet spy in court." },
+      { title: "A Real Pain", year: 2024, type: "Movie", genre: ["Comedy", "Drama"], desc: "Mismatched cousins reunite for a tour through Poland to honor their beloved grandmother." },
+      { title: "Companion", year: 2025, type: "Movie", genre: ["Sci-Fi", "Thriller"], desc: "A psychological and twisted companion sci-fi thriller with unexpected romance and dark secrets." },
+      { title: "The Ron Clark Story", year: 2006, type: "Movie", genre: ["Drama", "Biography"], desc: "An idealistic small-town teacher relocates to the toughest Harlem classroom to make a genuine difference." },
+      { title: "Colombiana", year: 2011, type: "Movie", genre: ["Action", "Thriller"], desc: "A young woman witnesses her parents' murder and grows up to become a stone-cold assassin bent on vengeance." },
+      { title: "Night of the Hunted", year: 2023, type: "Movie", genre: ["Thriller", "Horror"], desc: "An unsuspecting woman is pinned down at a remote gas station by a secret sniper with a chilling vendetta." },
+      { title: "12 Feet Deep", year: 2017, type: "Movie", genre: ["Thriller"], desc: "Two sisters become trapped beneath the fiberglass cover of an Olympic-sized public pool over a holiday weekend." },
+      { title: "In the House", year: 2012, type: "Movie", genre: ["Drama", "Mystery", "Thriller"], desc: "A clever 16-year-old boy ingratiates himself into a classmate's home and writes essays about it for his French teacher." },
+      { title: "68 Whiskey", year: 2020, type: "Series", genre: ["Comedy", "Drama"], desc: "A multicultural band of Army medics navigate survival, dangerous trade, and absurd humor at an Afghan outpost." },
+      { title: "Dude, Where's My Car?", year: 2000, type: "Movie", genre: ["Comedy", "Sci-Fi", "Classic"], desc: "Two stoners wake up after a night of partying with no memory of what happened and can't locate their car." },
+      { title: "The Leftovers", year: 2014, type: "Series", genre: ["Drama", "Mystery", "Sci-Fi"], desc: "Three years after the sudden disappearance of 2% of the global population, the remaining struggle to cope." },
+      { title: "The Campaign", year: 2012, type: "Movie", genre: ["Comedy"], desc: "Two North Carolina politicians battle it out in an absurdly dirty campaign race for a seat in Congress." },
+      { title: "Lethal Seduction", year: 2015, type: "Movie", genre: ["Thriller", "Drama"], desc: "A young man finds himself drawn into a dangerous liaison with an alluring older woman harboring dark secrets." },
+      { title: "Going the Distance", year: 2010, type: "Movie", genre: ["Comedy", "Romance"], desc: "A romantic comedy about a young couple attempting to navigate a coast-to-coast long-distance relationship." },
+      { title: "Diabolik", year: 2021, type: "Movie", genre: ["Action", "Crime", "Thriller"], desc: "The dark and romantic comic book adaptations of the iconic ruthless thief Diabolik in 1960s fictional Italy." },
+      { title: "I Care a Lot", year: 2020, type: "Movie", genre: ["Thriller", "Comedy", "Crime"], desc: "A crooked legal guardian preys on wealthy elderly wards until she tries it on the wrong mobster's mother." },
+      { title: "Red Eye", year: 2005, type: "Movie", genre: ["Thriller", "Mystery"], desc: "A hotel manager is held hostage on an overnight flight by a charming terrorist aiming to assassinate an official." },
+      { title: "Eddie the Eagle", year: 2016, type: "Movie", genre: ["Biography", "Comedy", "Drama"], desc: "The inspiring true story of Michael Edwards, the notoriously tenacious British underdog ski jumper." },
+      { title: "License to Wed", year: 2007, type: "Movie", genre: ["Comedy", "Romance"], desc: "A newly engaged couple must endure an eccentric reverend's grueling pre-marital bootcamp." },
+      { title: "The Station Agent", year: 2003, type: "Movie", genre: ["Comedy", "Drama"], desc: "A lonely man born with dwarfism inherits an abandoned rural train depot and attracts unexpected eccentric friends." },
+      { title: "Diary of a Wimpy Kid", year: 2010, type: "Movie", genre: ["Comedy", "Family"], desc: "Greg Heffley enters middle school determined to become popular despite his awkward mishaps." },
+      { title: "The Goldfinch", year: 2019, type: "Movie", genre: ["Drama"], desc: "A boy in New York is taken in by a wealthy family after his mother is killed in a Metropolitan museum bombing." },
+      { title: "Men of Honor", year: 2000, type: "Movie", genre: ["Biography", "Drama"], desc: "The inspiring true story of Carl Brashear, who overcame racism and amputation to become a master Navy diver." },
+      { title: "Echelon Conspiracy", year: 2009, type: "Movie", genre: ["Action", "Sci-Fi", "Thriller"], desc: "A security engineer receives anonymous text messages that grant him unbelievable casino wealth, followed by deadly danger." },
+      { title: "I Came By", year: 2022, type: "Movie", genre: ["Thriller", "Mystery"], desc: "A rebellious graffiti artist targets the homes of the wealthy elite and unearths a grim subterranean secret." },
+      { title: "Deadly Illusions", year: 2021, type: "Movie", genre: ["Thriller", "Drama"], desc: "A bestselling novelist with writer's block hires an innocent nanny, only for fantasy and reality to blur dangerously." },
+      { title: "Fracture", year: 2007, type: "Movie", genre: ["Thriller", "Crime", "Drama"], desc: "An ambitious young deputy district attorney is pitted in a cerebral cat-and-mouse game against an unhinged structural engineer." },
+      { title: "Polar", year: 2019, type: "Movie", genre: ["Action", "Thriller"], desc: "The world's top assassin is on the verge of retirement when his ruthless employer sends hitmen to eliminate him." },
+      { title: "A Little Game", year: 2014, type: "Movie", genre: ["Family", "Drama"], desc: "An awkward girl coping with private school meets a gruff chess master in Washington Square Park who teaches her life's rules." },
+      { title: "Babel", year: 2006, type: "Movie", genre: ["Drama"], desc: "Tragedy strikes a married couple on vacation in Morocco, setting off an interconnected chain of events across four continents." },
+      { title: "Matilda", year: 1996, type: "Movie", genre: ["Comedy", "Fantasy", "Classic"], desc: "A precocious little girl with unloving parents and telekinetic powers takes on a tyrannical school headmistress." },
+      { title: "The Hunt", year: 2020, type: "Movie", genre: ["Thriller", "Action", "Comedy"], desc: "Twelve strangers wake up in a remote clearing, unaware they have been chosen to be hunted by elite sociopaths." },
+      { title: "Laal Kaptaan", year: 2019, type: "Movie", genre: ["Action", "Drama"], desc: "A fearsome Naga Sadhu assassin rides across 18th-century Bundelkhand on a quest for blood-soaked revenge." },
+      { title: "The Drop", year: 2014, type: "Movie", genre: ["Crime", "Drama", "Thriller"], desc: "Bob Saginowski finds himself at the center of a botched robbery that entangles a neighborhood criminal underworld." },
+      { title: "Flawless", year: 2007, type: "Movie", genre: ["Crime", "Drama", "Thriller"], desc: "In 1960s London, a disgruntled executive teams with a janitor to pull off an audacious diamond vault heist." },
+      { title: "Barefoot", year: 2014, type: "Movie", genre: ["Comedy", "Romance", "Drama"], desc: "The black-sheep son of a wealthy family brings a sheltered psychiatric patient to his brother's wedding." },
+      { title: "Nightcrawler", year: 2014, type: "Movie", genre: ["Thriller", "Crime", "Drama"], desc: "A driven loner blurs the line between observer and participant as he films grizzly accidents for LA morning news." },
+      { title: "Buffaloed", year: 2019, type: "Movie", genre: ["Comedy", "Drama"], desc: "Desperate to pay for college, an ambitious hustler finds her true calling in the cutthroat debt-collection industry of Buffalo." },
+      { title: "Don't Worry Darling", year: 2022, type: "Movie", genre: ["Mystery", "Sci-Fi", "Thriller"], desc: "A 1950s housewife living in a utopian experimental community suspects her husband's secret project conceals horror." },
+      { title: "Requiem for a Dream", year: 2000, type: "Movie", genre: ["Drama", "Classic"], desc: "The hopes and dreams of four Coney Island people shatter as their drug addictions spiral out of control." },
+      { title: "Unthinkable", year: 2010, type: "Movie", genre: ["Thriller", "Drama"], desc: "A black-ops interrogator and an FBI agent push constitutional boundaries to locate three nuclear devices planted across US cities." },
+      { title: "Law Abiding Citizen", year: 2009, type: "Movie", genre: ["Action", "Thriller", "Crime"], desc: "A frustrated father orchestrates lethal vengeance against a corrupt justice system from behind prison bars." },
+      { title: "Unbelievable", year: 2019, type: "Series", genre: ["Crime", "Drama"], desc: "Two female detectives pursue the truth when a teenager is accused of lying about being sexually assaulted." },
+      { title: "Clueless", year: 1995, type: "Movie", genre: ["Comedy", "Romance", "Classic"], desc: "A shallow, rich, and socially ambitious Beverly Hills teen plays matchmaker for students and faculty." },
+      { title: "The Magnificent Seven", year: 2016, type: "Movie", genre: ["Action", "Western"], desc: "Seven outlaws, bounty hunters, and gamblers band together to defend an oppressed town from a cruel industrialist." },
+      { title: "Shadow in the Cloud", year: 2020, type: "Movie", genre: ["Action", "Horror", "Sci-Fi"], desc: "A WWII female pilot carrying top-secret documents aboard a B-17 Flying Fortress encounters an evil gremlin on board." },
+      { title: "Office Uprising", year: 2018, type: "Movie", genre: ["Comedy", "Horror", "Action"], desc: "An underachieving corporate worker must save his coworkers after an energy drink turns everyone into violent maniacs." },
+      { title: "The Spectacular Now", year: 2013, type: "Movie", genre: ["Drama", "Romance"], desc: "A charming high school senior living purely for the moment unexpectedly connects with an introverted, nice girl." },
+      { title: "Dream Lover", year: 1993, type: "Movie", genre: ["Mystery", "Thriller"], desc: "A successful architect marries a captivating woman, only to slowly realize that her past is entirely fabricated." },
+      { title: "Moving Violations", year: 1985, type: "Movie", genre: ["Comedy", "Classic"], desc: "A group of careless drivers are sentenced to traffic school, presided over by an unhinged police officer." },
+      { title: "Tucker and Dale vs Evil", year: 2010, type: "Movie", genre: ["Comedy", "Horror"], desc: "Two well-meaning hillbillies on vacation are hilariously mistaken for murderous maniacs by preppy college kids." },
+      { title: "Night Hunter", year: 2018, type: "Movie", genre: ["Action", "Thriller", "Mystery"], desc: "A weathered lieutenant and his police force become trapped in a lethal scheme involving a captured predator." },
+      { title: "The Gentlemen", year: 2019, type: "Movie", genre: ["Action", "Comedy", "Crime"], desc: "An American expat attempts to sell his lucrative London marijuana empire, triggering blackmail, schemes, and violence." },
+      { title: "Homebound", year: 2021, type: "Movie", genre: ["Mystery", "Horror", "Thriller"], desc: "A woman arrives at her new husband's countryside home and finds his children acting unusually hostile and strange." },
+      { title: "Mard Ko Dard Nahi Hota", year: 2018, type: "Movie", genre: ["Action", "Comedy"], desc: "A young boy with congenital insensitivity to pain trains in martial arts to vanquish crooks and rescue his idol." },
+      { title: "Temple Grandin", year: 2010, type: "Movie", genre: ["Biography", "Drama"], desc: "An extraordinary biopic of an autistic woman who revolutionized humane livestock practices and animal sciences." },
+      { title: "The Assets", year: 2014, type: "Series", genre: ["Drama", "Thriller"], desc: "Two veteran CIA operatives seek out the identity of the deadly Russian mole Aldrich Ames inside the agency." },
+      { title: "Captain Fantastic", year: 2016, type: "Movie", genre: ["Comedy", "Drama"], desc: "In the forests of the Pacific Northwest, a father raising his six children off the grid is forced into the real world." },
+      { title: "Ruby & Quentin", year: 2003, type: "Movie", genre: ["Comedy", "Crime"], desc: "A stoic hardened criminal is stuck escaping prison alongside an endlessly talkative, kind-hearted fool." },
+      { title: "The Hunter's Prayer", year: 2017, type: "Movie", genre: ["Action", "Thriller"], desc: "A solitary assassin develops a conscience and protects a young woman he was initially ordered to wipe out." },
+      { title: "The Mole Song: Undercover Agent Reiji", year: 2013, type: "Movie", genre: ["Action", "Comedy"], desc: "A goofy, unorthodox police officer is fired only to be recruited as an undercover spy inside Japan's biggest Yakuza syndicate." },
+      { title: "The Neon Demon", year: 2016, type: "Movie", genre: ["Horror", "Thriller", "Drama"], desc: "An aspiring model moves to Los Angeles where her youth and vitality are devoured by fashion-crazed women." },
+      { title: "Before I Disappear", year: 2014, type: "Movie", genre: ["Drama"], desc: "At the lowest point of his life, a young man receives an emergency call from his estranged sister to look after his niece." },
+      { title: "Grimsby", year: 2016, type: "Movie", genre: ["Action", "Comedy"], desc: "An elite British secret agent is forced to team up with his football hooligan brother to prevent a global disaster." },
+      { title: "Eden Lake", year: 2008, type: "Movie", genre: ["Horror", "Thriller"], desc: "A couple's romantic weekend by an English lake turns into an unrelenting nightmare after confronting vicious local youths." },
+      { title: "Kaleidoscope", year: 2023, type: "Series", genre: ["Action", "Crime", "Drama"], desc: "A master thief and his crew attempt an epic $7 billion heist, where the puzzle can be watched in any sequence." },
+      { title: "Abigail", year: 2024, type: "Movie", genre: ["Horror", "Comedy", "Thriller"], desc: "Kidnappers capture the 12-year-old ballerina daughter of a crime boss, unaware she is a bloodthirsty vampire." },
+      { title: "The Lovely Bones", year: 2009, type: "Movie", genre: ["Drama", "Fantasy", "Mystery"], desc: "After being murdered, a teenage girl watches from limbo as her family copes with loss and searches for her killer." },
+      { title: "Standoff", year: 2016, type: "Movie", genre: ["Thriller", "Action"], desc: "A troubled combat veteran protects an orphaned girl from a professional assassin inside a remote farmhouse." },
+      { title: "Rat Race", year: 2001, type: "Movie", genre: ["Comedy", "Classic"], desc: "An eccentric casino owner places six lucky gamblers into a chaotic race to claim two million dollars inside a locker." },
+      { title: "The Order", year: 2024, type: "Movie", genre: ["Crime", "Drama", "Thriller"], desc: "An FBI agent tracks a white supremacist terrorist organization funding attacks through bank robberies." },
+      { title: "Copshop", year: 2021, type: "Movie", genre: ["Action", "Thriller"], desc: "A wily con artist gets arrested to hide out, only for a professional hitman to lock himself into the same small-town jail." },
+      { title: "Source Code", year: 2011, type: "Movie", genre: ["Sci-Fi", "Thriller", "Mystery"], desc: "A soldier wakes up in someone else's body on a commuter train and has eight minutes to stop a deadly bomb explosion." },
+      { title: "Under the Skin", year: 2013, type: "Movie", genre: ["Sci-Fi", "Drama", "Mystery"], desc: "An otherworldly alien entity in human form prowls the streets of Glasgow looking for unsuspecting men." },
+      { title: "Meet Bill", year: 2007, type: "Movie", genre: ["Comedy", "Drama"], desc: "A chronically dissatisfied man works at his father-in-law's bank and mentors a high school kid to regain self-worth." },
+      { title: "Love at First Sight", year: 2023, type: "Movie", genre: ["Romance", "Comedy"], desc: "Two strangers connect on a flight to London, but lose each other at customs. Can destiny bring them back together?" },
+      { title: "Ankhon Dekhi", year: 2013, type: "Movie", genre: ["Drama", "Comedy"], desc: "A man in old Delhi decides he will only believe what he sees with his own eyes, transforming his household." },
+      { title: "Yeh Saali Zindagi", year: 2011, type: "Movie", genre: ["Thriller", "Crime", "Comedy"], desc: "A fast-paced crime thriller where romantic fixations and kidnapping plots collide through the alleys of Delhi." },
+      { title: "Searching for Bobby Fischer", year: 1993, type: "Movie", genre: ["Biography", "Drama"], desc: "A boy exhibits prodigal chess talent, while his parents and coach debate whether to mold him into an aggressive competitor." },
+      { title: "House M.D.", year: 2004, type: "Series", genre: ["Drama", "Mystery"], desc: "An antisocial maverick doctor who despises patients leads a team of diagnosticians solving medical puzzles." },
+      { title: "The Secret in Their Eyes", year: 2009, type: "Movie", genre: ["Drama", "Mystery", "Thriller"], desc: "A retired legal counselor writes a novel looking back at an unresolved rape-homicide case from 25 years ago." },
+      { title: "Lost", year: 2004, type: "Series", genre: ["Sci-Fi", "Mystery", "Drama"], desc: "The survivors of a plane crash are forced to work together on a mysterious island full of smoke monsters and secrets." },
+      { title: "Homeland", year: 2011, type: "Series", genre: ["Drama", "Thriller"], desc: "A bipolar CIA officer becomes convinced that a rescued prisoner of war has been turned by al-Qaeda." },
+      { title: "Scissor Seven", year: 2018, type: "Series", genre: ["Animation", "Action", "Comedy"], desc: "An amnesiac hairdresser armed with telekinetic scissors tries to become a budget assassin to recover his memories." },
+      { title: "Only the Brave", year: 2017, type: "Movie", genre: ["Biography", "Drama"], desc: "The heroic and heartbreaking true story of the Granite Mountain Hotshots fighting the Yarnell Hill wildfire." },
+      { title: "Hall Pass", year: 2011, type: "Movie", genre: ["Comedy", "Romance"], desc: "Two married men are granted one week off from marriage by their wives to do whatever they desire." },
+      { title: "Exam", year: 2009, type: "Movie", genre: ["Mystery", "Thriller"], desc: "Eight candidates for a highly desirable corporate job are locked in a room with a blank page and 80 minutes to solve it." },
+      { title: "Hush", year: 2016, type: "Movie", genre: ["Horror", "Thriller"], desc: "A deaf and mute author living in isolation in the woods must fight for her life when a masked killer appears outside." },
+      { title: "A Good Year", year: 2006, type: "Movie", genre: ["Comedy", "Drama", "Romance"], desc: "A ruthless London investment broker inherits his uncle's vineyard estate in picturesque Provence." },
+      { title: "The Big Hit", year: 1998, type: "Movie", genre: ["Action", "Comedy"], desc: "A hitman eager to please everyone kidnaps a wealthy businessman's daughter, oblivious she is his mob boss's godchild." },
+      { title: "Mine", year: 2016, type: "Movie", genre: ["Thriller", "Drama", "War"], desc: "Following a botched mission, a US soldier finds his foot planted on a landmine in the middle of a desert storm." },
+      { title: "The Real McCoy", year: 1993, type: "Movie", genre: ["Crime", "Thriller", "Action"], desc: "A legendary bank robber attempts to go clean, but is blackmailed into pulling off one last impossible vault heist." },
+      { title: "In Your Eyes", year: 2014, type: "Movie", genre: ["Romance", "Sci-Fi", "Drama"], desc: "Two completely different individuals across the country share an unexplainable telepathic sensory bond." },
+      { title: "The Man from Earth", year: 2007, type: "Movie", genre: ["Sci-Fi", "Drama", "Classic"], desc: "An impromptu farewell party for an academic turns into an astounding philosophical debate when he claims to be 14,000 years old." },
+      { title: "The Last Castle", year: 2001, type: "Movie", genre: ["Action", "Drama", "Thriller"], desc: "A court-martialed three-star general leads an inmate uprising against a cruel military prison warden." },
+      { title: "The Ultimate Life", year: 2013, type: "Movie", genre: ["Drama"], desc: "A wealthy young man struggling with personal priorities reads his grandfather's journal and learns true value." },
+      { title: "The Money Pit", year: 1986, type: "Movie", genre: ["Comedy", "Classic"], desc: "A young couple buys an impossibly cheap mansion in the countryside, only to watch it crumble around them." },
+      { title: "So I Married an Axe Murderer", year: 1993, type: "Movie", genre: ["Comedy", "Romance", "Classic"], desc: "A San Francisco poet falls in love with an attractive butcher, but worries she is an infamous serial husband-slayer." },
+      { title: "Airplane!", year: 1980, type: "Movie", genre: ["Comedy", "Classic"], desc: "An ex-fighter pilot afraid of flying must land a commercial airliner after the crew gets food poisoning. Pure spoof masterpiece." },
+      { title: "Blazing Saddles", year: 1974, type: "Movie", genre: ["Comedy", "Western", "Classic"], desc: "Mel Brooks' legendary comedy about a frontier town appointed a Black sheriff in a plot to drive the residents out." },
+      { title: "Galaxy Quest", year: 1999, type: "Movie", genre: ["Comedy", "Sci-Fi", "Classic"], desc: "The alumni cast of a defunct cult sci-fi TV series are recruited by real aliens who mistook the show for historical records." },
+      { title: "Election", year: 1999, type: "Movie", genre: ["Comedy", "Drama", "Classic"], desc: "A high school civics teacher sabotages the campaign of an overachieving student running for class president." },
+      { title: "Death Becomes Her", year: 1992, type: "Movie", genre: ["Comedy", "Fantasy", "Classic"], desc: "Two bitter rivals drink a magical potion that promises immortality and youth, with hilariously grotesque side effects." },
+      { title: "The Sure Thing", year: 1985, type: "Movie", genre: ["Comedy", "Romance", "Classic"], desc: "Two antagonistic college classmates are forced to share a cross-country car ride to California." },
+      { title: "Dead Like Me", year: 2003, type: "Series", genre: ["Comedy", "Drama", "Fantasy"], desc: "A cynical young woman killed by a falling toilet seat from a space station becomes a grim reaper collecting souls." },
+      { title: "Stillwater", year: 2021, type: "Movie", genre: ["Drama", "Crime", "Thriller"], desc: "An oil rig roughneck from Oklahoma travels to Marseille to exonerate his estranged daughter of a murder she says she didn't commit." },
+      { title: "WarGames", year: 1983, type: "Movie", genre: ["Sci-Fi", "Thriller", "Classic"], desc: "A young computer prodigy unknowingly hacks into a top-secret NORAD supercomputer and nearly starts WWIII." },
+      { title: "King of New York", year: 1990, type: "Movie", genre: ["Crime", "Thriller", "Classic"], desc: "A newly released drug kingpin vows to wipe out his rivals and use the profits to build a public hospital." },
+      { title: "Grease", year: 1978, type: "Movie", genre: ["Comedy", "Romance", "Classic"], desc: "Good girl Sandy Olsson and greaser Danny Zuko fall in love over the summer and navigate high school cliques." },
+      { title: "Million Dollar Baby", year: 2004, type: "Movie", genre: ["Drama", "Classic"], desc: "A hardened veteran boxing coach reluctantly agrees to train a determined 31-year-old waitress." },
+      { title: "The Greatest Beer Run Ever", year: 2022, type: "Movie", genre: ["Comedy", "Drama", "War"], desc: "A man leaves New York in 1967 to travel directly to the frontlines in Vietnam to bring his fighting buddies cold beers." },
+      { title: "Ransom", year: 1996, type: "Movie", genre: ["Crime", "Thriller", "Classic"], desc: "When an airline tycoon's son is kidnapped, he turns the tables by converting the ransom into a bounty on the abductors." },
+      { title: "Self/less", year: 2015, type: "Movie", genre: ["Sci-Fi", "Thriller"], desc: "A dying billionaire transfers his consciousness into a young healthy body, but starts having hallucinations of the donor's past." },
+      { title: "Bandits", year: 2001, type: "Movie", genre: ["Comedy", "Crime", "Romance"], desc: "Two escaped bank robbers known as the 'Sleepover Bandits' inadvertently fall in love with the hostage they kidnapped." },
+      { title: "Swept Away", year: 1974, type: "Movie", genre: ["Comedy", "Drama", "Romance", "Classic"], desc: "A rich capitalist socialite and a communist deckhand are stranded on a Mediterranean desert island where class roles flip." },
+      { title: "Watching the Detectives", year: 2007, type: "Movie", genre: ["Comedy", "Romance"], desc: "A movie-obsessed video store clerk's predictable life is turned upside-down by a thrill-seeking free spirit." },
+      { title: "Jumper", year: 2008, type: "Movie", genre: ["Action", "Sci-Fi", "Thriller"], desc: "A young man discovers he possesses the superhuman ability to teleport anywhere on Earth, putting him in a zealot's crosshairs." },
+      { title: "Room Laundering", year: 2018, type: "Movie", genre: ["Comedy", "Drama", "Fantasy"], desc: "A young Japanese woman who can see ghosts cleanses apartments where unnatural deaths occurred." },
+      { title: "The Stoker", year: 2010, type: "Movie", genre: ["Crime", "Drama"], desc: "A shell-shocked veteran works the furnace in St. Petersburg, unaware the local mafia uses his boiler for disposals." },
+      { title: "The Vanishing", year: 1988, type: "Movie", genre: ["Mystery", "Thriller", "Classic"], desc: "A man searches obsessively for his girlfriend after she vanishes without a trace at a French highway rest stop." },
+      { title: "Handsome Guys", year: 2024, type: "Movie", genre: ["Comedy", "Horror"], desc: "Two gentle handymen move into their dream cabin in the woods, only to be caught in supernatural slapstick mayhem." },
+      { title: "The Kids Are All Right", year: 2010, type: "Movie", genre: ["Comedy", "Drama"], desc: "Two children conceived by in vitro fertilization bring their biological sperm donor father into their moms' lives." },
+      { title: "What Lies Below", year: 2020, type: "Movie", genre: ["Mystery", "Sci-Fi", "Horror"], desc: "A 16-year-old girl returns from camp to meet her mother's charming new fiancé, who might not be human at all." },
+      { title: "Against the Sun", year: 2014, type: "Movie", genre: ["Action", "Drama"], desc: "Three WWII US Navy airmen crash-land into the South Pacific and drift thousands of miles on a small yellow raft." },
+      { title: "Superhero Movie", year: 2008, type: "Movie", genre: ["Comedy", "Sci-Fi"], desc: "A hilarious slapstick parody of Spider-Man and classic Marvel superhero tropes starring Drake Bell and Leslie Nielsen." },
+      { title: "Radius", year: 2017, type: "Movie", genre: ["Sci-Fi", "Thriller", "Mystery"], desc: "A man wakes up from a car crash with amnesia and discovers anyone who comes within a 50-foot radius of him dies instantly." },
+      { title: "Time Trap", year: 2017, type: "Movie", genre: ["Sci-Fi", "Action", "Adventure"], desc: "A group of students explore a deep Texas cave system where time passes radically slower than on the surface." },
+      { title: "The One I Love", year: 2014, type: "Movie", genre: ["Sci-Fi", "Comedy", "Drama"], desc: "A couple seeking to rekindle their marriage escape to a secluded vacation home where strange duplicates reside in the guesthouse." },
+      { title: "Excalibur", year: 1981, type: "Movie", genre: ["Fantasy", "Action", "Classic"], desc: "John Boorman's vivid, lavish retelling of the legendary myth of King Arthur, the Knights of the Round Table, and Merlin." },
+      { title: "Crawl", year: 2019, type: "Movie", genre: ["Action", "Horror", "Thriller"], desc: "A college swimmer attempts to rescue her father during a Category 5 hurricane in Florida and gets trapped by massive alligators." },
+      { title: "Revolver", year: 2005, type: "Movie", genre: ["Crime", "Drama", "Mystery"], desc: "Guy Ritchie's mind-bending crime drama about a gambler who masters a formula to win any game against a casino mogul." },
+      { title: "Still Life", year: 2013, type: "Movie", genre: ["Comedy", "Drama"], desc: "A quiet council worker tasked with finding next of kin for people who died alone embarks on one final heartfelt investigation." },
+      { title: "Enter Nowhere", year: 2011, type: "Movie", genre: ["Mystery", "Sci-Fi", "Thriller"], desc: "Three strangers arrive separately at a mysterious cabin deep inside a supernatural forest with no way out." },
+      { title: "Pegasus Market", year: 2019, type: "Series", genre: ["Comedy"], desc: "An eccentric executive is demoted to a failing supermarket and tries to bankrupt it out of spite, but absurdly turns it into a hit." },
+      { title: "Little Man Tate", year: 1991, type: "Movie", genre: ["Drama"], desc: "A single working-class mother struggles to give her seven-year-old child prodigy the upbringing he needs." },
+      { title: "I Am the Night", year: 2019, type: "Series", genre: ["Drama", "Mystery"], desc: "A teenage girl investigates her origins, which lead her to an infamous gynecologist tied to the Black Dahlia murder." },
+      { title: "Miracle: Letters to the President", year: 2021, type: "Movie", genre: ["Drama"], desc: "In 1988, a high school math genius writes persistent letters to the South Korean president to build a small village train stop." },
+      { title: "The Fabelmans", year: 2022, type: "Movie", genre: ["Drama"], desc: "Growing up in post-WWII Arizona, young Sammy Fabelman discovers the transformative power of movies and cameras." },
+      { title: "The Glory", year: 2022, type: "Series", genre: ["Drama", "Thriller"], desc: "Years after surviving brutal high school bullying, a woman executes an elaborate and cold-blooded revenge plot." },
+      { title: "One Day", year: 2011, type: "Movie", genre: ["Drama", "Romance"], desc: "Dexter and Emma meet on the night of their college graduation and their lives are revisited on that exact date for twenty years." },
+      { title: "Fright Night", year: 2011, type: "Movie", genre: ["Comedy", "Horror"], desc: "A high school teenager discovers that his charismatic and good-looking new next-door neighbor is a deadly vampire." },
+      { title: "Haywire", year: 2011, type: "Movie", genre: ["Action", "Thriller"], desc: "A black-ops super soldier is betrayed and framed by her handlers, unleashing her lethal skills to survive." },
+      { title: "2 Guns", year: 2013, type: "Movie", genre: ["Action", "Comedy", "Crime"], desc: "A DEA agent and a naval intelligence officer rob a cartel bank, unaware that both are undercover federal agents." },
+      { title: "Ambulance", year: 2022, type: "Movie", genre: ["Action", "Thriller"], desc: "Two bank-robbing foster brothers hijack an ambulance carrying a wounded cop and an EMT through the streets of LA." },
+      { title: "The Final Girls", year: 2015, type: "Movie", genre: ["Comedy", "Horror"], desc: "A grieving girl is pulled into the world of an iconic 1980s slasher movie that starred her late mother." },
+      { title: "Little Man", year: 2006, type: "Movie", genre: ["Comedy"], desc: "A diminutive jewel thief poses as an abandoned baby on a desperate suburban couple's porch to retrieve a stolen diamond." },
+      { title: "Soft & Quiet", year: 2022, type: "Movie", genre: ["Thriller", "Drama"], desc: "A real-time descent into dread as an elementary school teacher hosts a secret gathering of like-minded alt-right women." },
+      { title: "Gaus Electronics", year: 2022, type: "Series", genre: ["Comedy"], desc: "The chaotic and hilarious daily struggles of Marketing Team 3 at a quirky corporate consumer electronics company." },
+      { title: "Elizabethtown", year: 2005, type: "Movie", genre: ["Comedy", "Drama", "Romance"], desc: "A suicidal shoe designer meets an optimistic flight attendant while traveling to his father's Kentucky funeral." },
+      { title: "Crazy Alien", year: 2019, type: "Movie", genre: ["Comedy", "Sci-Fi"], desc: "A struggling Chinese monkey trainer and his friend capture an alien visitor and mistake it for a peculiar primate." },
+      { title: "Hostile", year: 2017, type: "Movie", genre: ["Horror", "Drama", "Sci-Fi"], desc: "A lone survivor in a post-apocalyptic wasteland struggles with broken legs trapped in an overturned vehicle against a creature." }
+    ];
+
+    // State
+    let currentFilter = 'all';
+    let pool = [];
+    let history = []; // for Undo
+    let watchlist = []; // Saved right-swipes
+    let isDragging = false;
+    let startX = 0;
+    let startY = 0;
+    let currentX = 0;
+    let currentY = 0;
+    let activeCardEl = null;
+
+    // Local Storage Keys
+    const LS_WATCHLIST_KEY = 'cineswipe_user_watchlist';
+    const LS_HISTORY_KEY = 'cineswipe_user_history';
+
+    // Elements
+    const deckEl = document.getElementById('card-deck');
+    const emptyDeckEl = document.getElementById('deck-empty');
+    const totalPoolCountEl = document.getElementById('total-pool-count');
+    const watchlistCountEl = document.getElementById('watchlist-count');
+    const savedCounterEl = document.getElementById('saved-counter');
+    const watchlistModal = document.getElementById('watchlist-modal');
+    const watchlistDrawer = document.getElementById('watchlist-drawer');
+    const watchlistItemsEl = document.getElementById('watchlist-items');
+    const matchDialog = document.getElementById('match-dialog');
+    const matchDialogBox = document.getElementById('match-dialog-box');
+    const toastEl = document.getElementById('toast');
+
+    // Color theme assignments for titles to generate visually striking posters
+    const GRADIENTS = [
+      'from-rose-900 via-stone-900 to-black',
+      'from-amber-900 via-neutral-900 to-black',
+      'from-sky-900 via-slate-900 to-black',
+      'from-emerald-900 via-zinc-900 to-black',
+      'from-purple-900 via-slate-900 to-black',
+      'from-indigo-950 via-gray-900 to-black',
+      'from-fuchsia-950 via-slate-950 to-black',
+      'from-cyan-950 via-neutral-900 to-black'
+    ];
+
+    // Load from LocalStorage
+    function loadSavedState() {
+      try {
+        const savedList = localStorage.getItem(LS_WATCHLIST_KEY);
+        if (savedList) {
+          watchlist = JSON.parse(savedList);
+        }
+      } catch (e) {
+        watchlist = [];
+      }
+      updateWatchlistBadge();
+    }
+
+    function saveWatchlistState() {
+      try {
+        localStorage.setItem(LS_WATCHLIST_KEY, JSON.stringify(watchlist));
+      } catch (e) {}
+      updateWatchlistBadge();
+    }
+
+    function updateWatchlistBadge() {
+      watchlistCountEl.textContent = watchlist.length;
+      savedCounterEl.textContent = watchlist.length;
+    }
+
+    // Initialize Card Deck based on active filter
+    function initDeck() {
+      const filtered = RAW_WATCHLIST.filter(item => {
+        if (currentFilter === 'all') return true;
+        if (currentFilter === 'Movie') return item.type === 'Movie';
+        if (currentFilter === 'Series') return item.type === 'Series';
+        return item.genre.some(g => g.toLowerCase() === currentFilter.toLowerCase());
+      });
+
+      // Filter out items already matched in Watchlist if desired, or keep to review
+      pool = [...filtered];
+      totalPoolCountEl.textContent = RAW_WATCHLIST.length;
+
+      // Shuffle slightly for fresh deck experience
+      pool.sort(() => Math.random() - 0.5);
+
+      renderCards();
+      updateActionButtons();
+    }
+
+    // Render Cards in Deck (Render top 3 for optimal performance & stack depth)
+    function renderCards() {
+      deckEl.innerHTML = '';
+      if (pool.length === 0) {
+        deckEl.classList.add('hidden');
+        emptyDeckEl.classList.remove('hidden');
+        return;
+      }
+
+      deckEl.classList.remove('hidden');
+      emptyDeckEl.classList.add('hidden');
+
+      const maxVisible = Math.min(pool.length, 3);
+      for (let i = maxVisible - 1; i >= 0; i--) {
+        const item = pool[i];
+        const card = createCardElement(item, i);
+        deckEl.appendChild(card);
+      }
+
+      setupTopCardGesture();
+    }
+
+    // Create Card DOM Element
+    function createCardElement(item, index) {
+      const card = document.createElement('div');
+      card.className = `tinder-card rounded-3xl overflow-hidden border border-brand-cardBorder shadow-2xl bg-brand-card flex flex-col justify-end text-left select-none cursor-grab active:cursor-grabbing`;
+      
+      // Depth transform for stack effect
+      const scale = 1 - index * 0.045;
+      const translateY = index * 12;
+      card.style.transform = `translate3d(0, ${translateY}px, -${index * 30}px) scale(${scale})`;
+      card.style.zIndex = 30 - index;
+      card.dataset.index = index;
+
+      // Assign decorative palette based on title length
+      const paletteIndex = (item.title.length + item.year) % GRADIENTS.length;
+      const gradient = GRADIENTS[paletteIndex];
+
+      // Poster art representation with clean typography and badges
+      card.innerHTML = `
+        <!-- Background Art & Backdrop -->
+        <div class="absolute inset-0 bg-gradient-to-b ${gradient} opacity-90"></div>
+        <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-white/10 via-transparent to-black/80"></div>
+
+        <!-- Big Decorative Background Watermark Initial -->
+        <div class="absolute top-6 right-6 text-9xl font-display font-black text-white/[0.04] select-none pointer-events-none uppercase">
+          ${item.title.charAt(0)}
+        </div>
+
+        <!-- Top Badges -->
+        <div class="absolute top-4 left-4 right-4 flex items-center justify-between z-10">
+          <div class="flex items-center gap-1.5">
+            <span class="px-2.5 py-1 rounded-full text-[11px] font-bold tracking-wider uppercase ${item.type === 'Series' ? 'bg-purple-500/80 text-white' : 'bg-brand-rose/90 text-white'} backdrop-blur-md shadow-md">
+              ${item.type}
+            </span>
+            <span class="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/10 text-slate-200 border border-white/15 backdrop-blur-md">
+              ${item.year}
+            </span>
+          </div>
+
+          <div class="flex items-center gap-1 text-brand-gold text-xs font-bold bg-black/40 px-2.5 py-1 rounded-full border border-white/10">
+            <i class="fa-solid fa-star"></i>
+            <span>Watchlist Pick</span>
+          </div>
+        </div>
+
+        <!-- STAMP BADGES (Revealed on Swipe) -->
+        <div class="stamp-like stamp-badge absolute top-16 left-6 border-4 border-emerald-400 text-emerald-400 font-display font-black text-2xl px-4 py-1.5 rounded-xl uppercase tracking-widest rotate-[-18deg] shadow-lg bg-black/30 backdrop-blur-sm z-30">
+          LIKE
+        </div>
+        <div class="stamp-nope stamp-badge absolute top-16 right-6 border-4 border-rose-500 text-rose-500 font-display font-black text-2xl px-4 py-1.5 rounded-xl uppercase tracking-widest rotate-[18deg] shadow-lg bg-black/30 backdrop-blur-sm z-30">
+          PASS
+        </div>
+        <div class="stamp-super stamp-badge absolute bottom-36 left-1/2 -translate-x-1/2 border-4 border-cyan-400 text-cyan-400 font-display font-black text-2xl px-5 py-1.5 rounded-xl uppercase tracking-widest shadow-lg bg-black/40 backdrop-blur-sm z-30">
+          SUPER LIKE
+        </div>
+
+        <!-- Card Content Footer -->
+        <div class="relative z-20 p-5 pt-12 card-overlay mt-auto">
+          <!-- Genre tags -->
+          <div class="flex flex-wrap gap-1.5 mb-2">
+            ${item.genre.map(g => `<span class="text-[10px] font-medium text-slate-300 bg-white/10 px-2 py-0.5 rounded-md">${g}</span>`).join('')}
+          </div>
+
+          <!-- Title -->
+          <h2 class="text-2xl sm:text-3xl font-display font-black text-white leading-tight mb-2 tracking-tight">
+            ${item.title}
+          </h2>
+
+          <!-- Description Hook -->
+          <p class="text-xs sm:text-sm text-slate-300 leading-relaxed line-clamp-3 mb-3">
+            ${item.desc}
+          </p>
+
+          <!-- Quick Action Links -->
+          <div class="flex items-center justify-between pt-2 border-t border-white/10 text-xs">
+            <a href="https://www.google.com/search?q=${encodeURIComponent(item.title + ' ' + item.year + ' movie trailer')}" target="_blank" class="text-slate-400 hover:text-white flex items-center gap-1.5 transition" onclick="event.stopPropagation();">
+              <i class="fa-solid fa-play text-[10px] text-brand-coral"></i>
+              <span>Trailer & Info</span>
+            </a>
+            <span class="text-slate-400 text-[11px]">Swipe right to match</span>
+          </div>
+        </div>
+      `;
+
+      return card;
+    }
+
+    // Setup Gesture Listeners for topmost card
+    function setupTopCardGesture() {
+      const cards = deckEl.querySelectorAll('.tinder-card');
+      if (cards.length === 0) return;
+
+      activeCardEl = cards[0]; // Top card
+
+      // Mouse Events
+      activeCardEl.addEventListener('mousedown', onDragStart);
+      // Touch Events
+      activeCardEl.addEventListener('touchstart', onDragStart, { passive: true });
+    }
+
+    function onDragStart(e) {
+      if (!activeCardEl) return;
+      isDragging = true;
+      activeCardEl.classList.remove('animating-return');
+
+      if (e.type === 'touchstart') {
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+      } else {
+        startX = e.clientX;
+        startY = e.clientY;
+      }
+
+      window.addEventListener('mousemove', onDragMove);
+      window.addEventListener('touchmove', onDragMove, { passive: false });
+      window.addEventListener('mouseup', onDragEnd);
+      window.addEventListener('touchend', onDragEnd);
+    }
+
+    function onDragMove(e) {
+      if (!isDragging || !activeCardEl) return;
+
+      let clientX, clientY;
+      if (e.type === 'touchmove') {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+      } else {
+        clientX = e.clientX;
+        clientY = e.clientY;
+      }
+
+      currentX = clientX - startX;
+      currentY = clientY - startY;
+
+      // Prevent window scrolling on touch drag when swiping vertically
+      if (e.cancelable && (Math.abs(currentX) > 10 || Math.abs(currentY) > 10)) {
+        e.preventDefault();
+      }
+
+      // Calculate tilt rotation
+      const rotate = currentX * 0.08;
+      activeCardEl.style.transform = `translate3d(${currentX}px, ${currentY}px, 0) rotate(${rotate}deg)`;
+
+      // Stamp opacity logic
+      const likeBadge = activeCardEl.querySelector('.stamp-like');
+      const nopeBadge = activeCardEl.querySelector('.stamp-nope');
+      const superBadge = activeCardEl.querySelector('.stamp-super');
+
+      const horizontalRatio = Math.min(Math.abs(currentX) / 120, 1);
+      const verticalRatio = Math.min(-currentY / 120, 1);
+
+      if (currentY < -40 && Math.abs(currentX) < 60) {
+        superBadge.style.opacity = verticalRatio;
+        likeBadge.style.opacity = 0;
+        nopeBadge.style.opacity = 0;
+      } else if (currentX > 0) {
+        likeBadge.style.opacity = horizontalRatio;
+        nopeBadge.style.opacity = 0;
+        superBadge.style.opacity = 0;
+      } else {
+        nopeBadge.style.opacity = horizontalRatio;
+        likeBadge.style.opacity = 0;
+        superBadge.style.opacity = 0;
+      }
+    }
+
+    function onDragEnd() {
+      if (!isDragging || !activeCardEl) return;
+      isDragging = false;
+
+      window.removeEventListener('mousemove', onDragMove);
+      window.removeEventListener('touchmove', onDragMove);
+      window.removeEventListener('mouseup', onDragEnd);
+      window.removeEventListener('touchend', onDragEnd);
+
+      const thresholdX = 100;
+      const thresholdY = -120;
+
+      if (currentY < thresholdY && Math.abs(currentX) < 100) {
+        // Super Like (Up)
+        executeSwipe('up');
+      } else if (currentX > thresholdX) {
+        // Like (Right)
+        executeSwipe('right');
+      } else if (currentX < -thresholdX) {
+        // Nope (Left)
+        executeSwipe('left');
+      } else {
+        // Rebound back to center
+        activeCardEl.classList.add('animating-return');
+        activeCardEl.style.transform = `translate3d(0, 0, 0) rotate(0deg)`;
+        
+        const stamps = activeCardEl.querySelectorAll('.stamp-badge');
+        stamps.forEach(s => s.style.opacity = 0);
+      }
+
+      currentX = 0;
+      currentY = 0;
+    }
+
+    // Execute Swipe Programmatically or through Gestures
+    function executeSwipe(direction) {
+      if (pool.length === 0 || !activeCardEl) return;
+
+      const swipedItem = pool[0];
+      const card = activeCardEl;
+      card.classList.add('animating-exit');
+
+      let targetX = 0;
+      let targetY = 0;
+      let targetRot = 0;
+
+      // Play subtle sound synthesis
+      playBeep(direction);
+
+      if (direction === 'right') {
+        targetX = window.innerWidth + 200;
+        targetRot = 30;
+        // Save to watchlist
+        saveMatch(swipedItem);
+        showToast(`Saved "${swipedItem.title}" to Watchlist!`);
+      } else if (direction === 'left') {
+        targetX = -window.innerWidth - 200;
+        targetRot = -30;
+      } else if (direction === 'up') {
+        targetY = -window.innerHeight - 200;
+        saveMatch(swipedItem);
+        triggerConfetti();
+        showToast(`★ Super Liked "${swipedItem.title}"!`);
+      }
+
+      card.style.transform = `translate3d(${targetX}px, ${targetY}px, 0) rotate(${targetRot}deg)`;
+      card.style.opacity = '0';
+
+      // Record to history for Undo
+      history.push({ item: swipedItem, direction: direction });
+      pool.shift();
+
+      setTimeout(() => {
+        card.remove();
+        renderCards();
+        updateActionButtons();
+      }, 350);
+    }
+
+    // Undo / Rewind previous choice
+    function rewindLastChoice() {
+      if (history.length === 0) return;
+
+      const last = history.pop();
+      // If was liked, remove from watchlist
+      if (last.direction === 'right' || last.direction === 'up') {
+        watchlist = watchlist.filter(w => w.title !== last.item.title);
+        saveWatchlistState();
+      }
+
+      pool.unshift(last.item);
+      renderCards();
+      updateActionButtons();
+      showToast(`Restored "${last.item.title}"`);
+    }
+
+    function saveMatch(item) {
+      if (!watchlist.some(w => w.title === item.title)) {
+        watchlist.unshift(item);
+        saveWatchlistState();
+      }
+    }
+
+    function updateActionButtons() {
+      const rewindBtn = document.getElementById('action-rewind');
+      rewindBtn.disabled = history.length === 0;
+    }
+
+    // Confetti celebration helper
+    function triggerConfetti() {
+      if (typeof confetti === 'function') {
+        confetti({
+          particleCount: 65,
+          spread: 70,
+          origin: { y: 0.7 },
+          colors: ['#FF4458', '#FF6B6B', '#FBBF24', '#38BDF8']
+        });
+      }
+    }
+
+    // Web Audio API feedback tones
+    function playBeep(type) {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        if (type === 'right') {
+          osc.frequency.setValueAtTime(440, ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(660, ctx.currentTime + 0.15);
+        } else if (type === 'left') {
+          osc.frequency.setValueAtTime(300, ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(200, ctx.currentTime + 0.12);
+        } else if (type === 'up') {
+          osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(783.99, ctx.currentTime + 0.2);
+        }
+
+        gain.gain.setValueAtTime(0.08, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.22);
+      } catch (err) {
+        // audio context blocked by browser policy until interaction
+      }
+    }
+
+    // Toast Notification Banner
+    let toastTimeout;
+    function showToast(msg) {
+      clearTimeout(toastTimeout);
+      toastEl.textContent = msg;
+      toastEl.classList.remove('opacity-0', 'pointer-events-none');
+      toastEl.classList.add('opacity-100');
+      toastTimeout = setTimeout(() => {
+        toastEl.classList.remove('opacity-100');
+        toastEl.classList.add('opacity-0', 'pointer-events-none');
+      }, 2400);
+    }
+
+    // Open & Render Watchlist Drawer
+    function openWatchlistModal() {
+      renderWatchlistItems();
+      watchlistModal.classList.remove('opacity-0', 'pointer-events-none');
+      watchlistDrawer.classList.remove('translate-x-full');
+    }
+
+    function closeWatchlistModal() {
+      watchlistDrawer.classList.add('translate-x-full');
+      watchlistModal.classList.add('opacity-0', 'pointer-events-none');
+    }
+
+    function renderWatchlistItems() {
+      if (watchlist.length === 0) {
+        watchlistItemsEl.innerHTML = `
+          <div class="h-64 flex flex-col items-center justify-center text-center p-6 text-slate-400">
+            <i class="fa-regular fa-heart text-4xl mb-3 text-slate-600"></i>
+            <p class="font-semibold text-slate-300">No matches yet</p>
+            <p class="text-xs text-slate-500 mt-1">Swipe right on any movie or TV series to build your binge-watch list.</p>
+          </div>
+        `;
+        return;
+      }
+
+      watchlistItemsEl.innerHTML = watchlist.map((item, idx) => `
+        <div class="p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl flex items-center justify-between gap-3 transition group">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-0.5">
+              <span class="text-[10px] font-bold px-1.5 py-0.2 rounded ${item.type === 'Series' ? 'bg-purple-900/60 text-purple-300' : 'bg-rose-900/60 text-rose-300'}">${item.type}</span>
+              <span class="text-xs text-slate-400 font-medium">${item.year}</span>
+            </div>
+            <h4 class="font-bold text-white text-sm truncate">${item.title}</h4>
+            <div class="text-[11px] text-slate-400 truncate">${item.genre.join(', ')}</div>
+          </div>
+          
+          <div class="flex items-center gap-1.5">
+            <a href="https://www.google.com/search?q=${encodeURIComponent(item.title + ' ' + item.year + ' watch stream')}" target="_blank" title="Search where to stream" class="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 flex items-center justify-center transition">
+              <i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>
+            </a>
+            <button onclick="removeWatchlistItem(${idx})" title="Remove item" class="w-8 h-8 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 flex items-center justify-center transition">
+              <i class="fa-regular fa-trash-can text-xs"></i>
+            </button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    window.removeWatchlistItem = function(index) {
+      watchlist.splice(index, 1);
+      saveWatchlistState();
+      renderWatchlistItems();
+      showToast('Item removed from Watchlist');
+    };
+
+    // Pick Random Movie (Dialog roulette)
+    function pickRandomMovie(sourceList) {
+      const candidates = sourceList && sourceList.length > 0 ? sourceList : pool.length > 0 ? pool : RAW_WATCHLIST;
+      if (!candidates || candidates.length === 0) return;
+
+      const randomItem = candidates[Math.floor(Math.random() * candidates.length)];
+      
+      document.getElementById('picked-title').textContent = randomItem.title;
+      document.getElementById('picked-meta').textContent = `${randomItem.year} • ${randomItem.type} • ${randomItem.genre.join(' / ')}`;
+      document.getElementById('picked-synopsis').textContent = randomItem.desc;
+      document.getElementById('picked-imdb').href = `https://www.imdb.com/find?q=${encodeURIComponent(randomItem.title)}`;
+      document.getElementById('picked-google').href = `https://www.google.com/search?q=${encodeURIComponent(randomItem.title + ' where to watch online')}`;
+
+      // Show dialog with celebration
+      matchDialog.classList.remove('opacity-0', 'pointer-events-none');
+      matchDialogBox.classList.remove('scale-90');
+      matchDialogBox.classList.add('scale-100');
+      triggerConfetti();
+    }
+
+    function closePickDialog() {
+      matchDialogBox.classList.remove('scale-100');
+      matchDialogBox.classList.add('scale-90');
+      matchDialog.classList.add('opacity-0', 'pointer-events-none');
+    }
+
+    // Copy formatted Watchlist to Clipboard
+    function copyWatchlistToClipboard() {
+      if (watchlist.length === 0) {
+        showToast('Watchlist is currently empty');
+        return;
+      }
+
+      const text = watchlist.map((w, idx) => `${idx + 1}. ${w.title} (${w.year}) [${w.type}] - ${w.genre.join(', ')}`).join('\n');
+      
+      // Fallback copy compatible with all iframe sandbox environments
+      const tempTextArea = document.createElement('textarea');
+      tempTextArea.value = text;
+      document.body.appendChild(tempTextArea);
+      tempTextArea.select();
+      try {
+        document.execCommand('copy');
+        showToast('Copied full watchlist to clipboard!');
+      } catch (err) {
+        showToast('Failed to copy to clipboard');
+      }
+      document.body.removeChild(tempTextArea);
+    }
+
+    // Setup Event Listeners
+    function setupEvents() {
+      // Swipe Action Buttons
+      document.getElementById('action-like').addEventListener('click', () => executeSwipe('right'));
+      document.getElementById('action-dislike').addEventListener('click', () => executeSwipe('left'));
+      document.getElementById('action-superlike').addEventListener('click', () => executeSwipe('up'));
+      document.getElementById('action-rewind').addEventListener('click', rewindLastChoice);
+
+      // Filter Chips
+      document.querySelectorAll('.filter-chip').forEach(chip => {
+        chip.addEventListener('click', (e) => {
+          document.querySelectorAll('.filter-chip').forEach(c => {
+            c.classList.remove('bg-white', 'text-black', 'font-semibold', 'shadow');
+            c.classList.add('bg-white/5', 'text-slate-300');
+          });
+
+          chip.classList.remove('bg-white/5', 'text-slate-300');
+          chip.classList.add('bg-white', 'text-black', 'font-semibold', 'shadow');
+
+          currentFilter = chip.dataset.filter;
+          initDeck();
+        });
+      });
+
+      // Watchlist modal controls
+      document.getElementById('btn-open-watchlist').addEventListener('click', openWatchlistModal);
+      document.getElementById('btn-close-watchlist').addEventListener('click', closeWatchlistModal);
+      watchlistModal.addEventListener('click', (e) => {
+        if (e.target === watchlistModal) closeWatchlistModal();
+      });
+
+      // Watchlist inner actions
+      document.getElementById('btn-copy-matches').addEventListener('click', copyWatchlistToClipboard);
+      document.getElementById('btn-clear-matches').addEventListener('click', () => {
+        if (watchlist.length === 0) return;
+        watchlist = [];
+        saveWatchlistState();
+        renderWatchlistItems();
+        showToast('Watchlist cleared');
+      });
+
+      // Pick roulette triggers
+      document.getElementById('btn-roulette').addEventListener('click', () => pickRandomMovie(pool));
+      document.getElementById('action-roulette').addEventListener('click', () => pickRandomMovie(pool));
+      document.getElementById('btn-pick-from-matches').addEventListener('click', () => {
+        if (watchlist.length === 0) {
+          showToast('Like a few titles first!');
+          return;
+        }
+        closeWatchlistModal();
+        pickRandomMovie(watchlist);
+      });
+
+      // Dialog Close
+      document.getElementById('picked-close').addEventListener('click', closePickDialog);
+      matchDialog.addEventListener('click', (e) => {
+        if (e.target === matchDialog) closePickDialog();
+      });
+
+      // Deck empty buttons
+      document.getElementById('btn-reset-deck').addEventListener('click', () => {
+        initDeck();
+      });
+      document.getElementById('btn-view-matches-empty').addEventListener('click', openWatchlistModal);
+
+      // Keyboard arrow shortcuts
+      window.addEventListener('keydown', (e) => {
+        // Don't trigger if user is interacting with modal
+        if (!watchlistModal.classList.contains('pointer-events-none') || !matchDialog.classList.contains('pointer-events-none')) {
+          if (e.key === 'Escape') {
+            closeWatchlistModal();
+            closePickDialog();
+          }
+          return;
+        }
+
+        if (e.key === 'ArrowRight') {
+          executeSwipe('right');
+        } else if (e.key === 'ArrowLeft') {
+          executeSwipe('left');
+        } else if (e.key === 'ArrowUp') {
+          executeSwipe('up');
+        } else if (e.key === 'z' || e.key === 'Z') {
+          rewindLastChoice();
+        } else if (e.key === ' ' || e.key === 'r') {
+          pickRandomMovie(pool);
+        }
+      });
+    }
+
+    // Boot the app
+    window.onload = function() {
+      loadSavedState();
+      initDeck();
+      setupEvents();
+    };
+  </script>
+</body>
+</html>
